@@ -10,6 +10,7 @@ if ! check_command jq; then
 fi
 
 OS_NAME=$(echo "$RUNNER_OS" | awk '{print tolower($0)}')
+ARCH_NAME=$(echo "$RUNNER_ARCH" | awk '{print tolower($0)}')
 MANIFEST_BASE_URL="https://storage.googleapis.com/flutter_infra_release/releases"
 MANIFEST_JSON_PATH="releases_$OS_NAME.json"
 MANIFEST_URL="$MANIFEST_BASE_URL/$MANIFEST_JSON_PATH"
@@ -66,15 +67,17 @@ download_archive() {
 
 CACHE_PATH=""
 CACHE_KEY=""
+PUB_CACHE_KEY=""
 PRINT_ONLY=""
 TEST_MODE=false
 ARCH=""
 VERSION=""
 
-while getopts 'tc:k:pa:n:' flag; do
+while getopts 'tc:k:d:pa:n:' flag; do
 	case "$flag" in
 	c) CACHE_PATH="$OPTARG" ;;
 	k) CACHE_KEY="$OPTARG" ;;
+	d) PUB_CACHE_KEY="$OPTARG" ;;
 	p) PRINT_ONLY=true ;;
 	t) TEST_MODE=true ;;
 	a) ARCH="$(echo "$OPTARG" | awk '{print tolower($0)}')" ;;
@@ -82,6 +85,8 @@ while getopts 'tc:k:pa:n:' flag; do
 	?) exit 2 ;;
 	esac
 done
+
+[[ -z $ARCH ]] && ARCH="$ARCH_NAME"
 
 ARR_CHANNEL=("${@:$OPTIND:1}")
 CHANNEL="${ARR_CHANNEL[0]}"
@@ -91,6 +96,9 @@ CHANNEL="${ARR_CHANNEL[0]}"
 [[ -z $ARCH ]] && ARCH=x64
 [[ -z $CACHE_PATH ]] && CACHE_PATH="$RUNNER_TEMP/flutter/:channel:-:version:-:arch:"
 [[ -z $CACHE_KEY ]] && CACHE_KEY="flutter-:os:-:channel:-:version:-:arch:-:hash:"
+[[ -z $PUB_CACHE_KEY ]] && PUB_CACHE_KEY="flutter-pub-:os:-:channel:-:version:-:arch:-:hash:"
+# Here we specifically use `PUB_CACHE` (and not `PUB_CACHE_PATH`), because `PUB_CACHE` is what dart (and flutter) looks for in the environment
+[[ -z $PUB_CACHE ]] && PUB_CACHE="$HOME/.pub-cache"
 
 if [[ "$TEST_MODE" == true ]]; then
 	RELEASE_MANIFEST=$(cat "$(dirname -- "${BASH_SOURCE[0]}")/test/$MANIFEST_JSON_PATH")
@@ -127,6 +135,7 @@ expand_key() {
 }
 
 CACHE_KEY=$(expand_key "$CACHE_KEY")
+PUB_CACHE_KEY=$(expand_key "$PUB_CACHE_KEY")
 CACHE_PATH=$(expand_key "$(transform_path "$CACHE_PATH")")
 
 if [[ "$PRINT_ONLY" == true ]]; then
@@ -142,6 +151,8 @@ if [[ "$PRINT_ONLY" == true ]]; then
 		echo "ARCHITECTURE=$info_architecture"
 		echo "CACHE-KEY=$CACHE_KEY"
 		echo "CACHE-PATH=$CACHE_PATH"
+		echo "PUB-CACHE-KEY=$PUB_CACHE_KEY"
+		echo "PUB-CACHE-PATH=$PUB_CACHE"
 		exit 0
 	fi
 
@@ -151,6 +162,8 @@ if [[ "$PRINT_ONLY" == true ]]; then
 		echo "ARCHITECTURE=$info_architecture"
 		echo "CACHE-KEY=$CACHE_KEY"
 		echo "CACHE-PATH=$CACHE_PATH"
+		echo "PUB-CACHE-KEY=$PUB_CACHE_KEY"
+		echo "PUB-CACHE-PATH=$PUB_CACHE"
 	} >>"$GITHUB_OUTPUT"
 
 	exit 0
@@ -171,11 +184,11 @@ fi
 
 {
 	echo "FLUTTER_ROOT=$CACHE_PATH"
-	echo "PUB_CACHE=$CACHE_PATH/.pub-cache"
+	echo "PUB_CACHE=$PUB_CACHE"
 } >>"$GITHUB_ENV"
 
 {
 	echo "$CACHE_PATH/bin"
 	echo "$CACHE_PATH/bin/cache/dart-sdk/bin"
-	echo "$CACHE_PATH/.pub-cache/bin"
+	echo "$PUB_CACHE/bin"
 } >>"$GITHUB_PATH"
